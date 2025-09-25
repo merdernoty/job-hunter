@@ -1,0 +1,14 @@
+server:
+  AppVersion: 1.0.0
+  Port: :5000
+  Mode: Production
+  Debug: false
+
+postgres:
+  PostgresqlHost: database
+  PostgresqlPort: 5432
+  PostgresqlUser: postgres
+  PostgresqlPassword: postgres
+  PostgresqlDbname: auth_db
+  PostgresqlSslmode: false
+  PgDriver: pgx

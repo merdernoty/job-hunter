@@ -1,0 +1,15 @@
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env 
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    ports:
+      - "15432:5432"
