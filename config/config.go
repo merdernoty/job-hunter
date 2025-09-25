@@ -15,8 +15,8 @@ type Config struct {
 }
 
 type BotConfig struct {
-	Token     string `json:"token"`
-	WebAppURL string `json:"webapp_url"`
+	Token     string
+	WebAppURL string
 }
 
 type ServerConfig struct {
@@ -70,6 +70,8 @@ func LoadConfig(filename string) (*viper.Viper, error) {
 	v.BindEnv("postgres.postgresqlsslmode", "DB_SSLMODE", "POSTGRES_SSLMODE")
 	v.BindEnv("logger.level", "LOG_LEVEL")
 	v.BindEnv("logger.development", "LOG_DEVELOPMENT")
+	v.BindEnv("bot.token", "BOT_TOKEN")
+    v.BindEnv("bot.webappurl", "BOT_WEBAPP_URL")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -104,10 +106,10 @@ func setDefaults(v *viper.Viper) {
 
 	// Postgres defaults
 	v.SetDefault("postgres.postgresqlhost", "localhost")
-	v.SetDefault("postgres.postgresqlport", "5432")
+	v.SetDefault("postgres.postgresqlport", "15432")
 	v.SetDefault("postgres.postgresqluser", "postgres")
 	v.SetDefault("postgres.postgresqlpassword", "postgres")
-	v.SetDefault("postgres.postgresqldbname", "job_hunter")
+	v.SetDefault("postgres.postgresqldbname", "postgres")
 	v.SetDefault("postgres.postgresqlsslmode", false)
 	v.SetDefault("postgres.pgdriver", "pgx")
 

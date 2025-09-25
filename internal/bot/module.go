@@ -14,7 +14,7 @@ func NewBotFromConfig(cfg *config.Config, logger logger.Logger) (*Bot, error) {
 
 var Module = fx.Module("bot",
 	fx.Provide(NewBotFromConfig),
-		fx.Invoke(func(lc fx.Lifecycle, bot *Bot, logger logger.Logger) {
+	fx.Invoke(func(lc fx.Lifecycle, bot *Bot, logger logger.Logger) {
 		lc.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
 				go func() {

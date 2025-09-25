@@ -4,6 +4,7 @@ import (
 	"github.com/merdernoty/job-hunter/app"
 	"github.com/merdernoty/job-hunter/config"
 	"github.com/merdernoty/job-hunter/internal/bot"
+	user "github.com/merdernoty/job-hunter/internal/users"
 	"github.com/merdernoty/job-hunter/pkg/db/postgres"
 	httpPkg "github.com/merdernoty/job-hunter/pkg/http"
 	"github.com/merdernoty/job-hunter/pkg/logger"
@@ -20,7 +21,6 @@ func main() {
 		logger.Module,
 		bot.Module,
 		telegram.Module,
-		// user.Module,     // TODO
-		// fx.Invoke(database.Migrate), // TODO
+		user.Module,
 	).Run()
 }
