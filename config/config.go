@@ -11,6 +11,12 @@ type Config struct {
 	Server   ServerConfig
 	Postgres PostgresConfig
 	Logger   Logger
+	Bot      BotConfig
+}
+
+type BotConfig struct {
+	Token     string `json:"token"`
+	WebAppURL string `json:"webapp_url"`
 }
 
 type ServerConfig struct {

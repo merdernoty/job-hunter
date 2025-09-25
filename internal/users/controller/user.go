@@ -1,0 +1,168 @@
+package controller
+
+import (
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v4"
+	"github.com/merdernoty/job-hunter/internal/users/domain"
+	httpResponse "github.com/merdernoty/job-hunter/pkg/http"
+)
+
+type UserController struct {
+	userService domain.UserService
+}
+
+func NewUserController(userService domain.UserService) *UserController {
+	return &UserController{
+		userService: userService,
+	}
+}
+
+func (ctrl *UserController) RegisterRoutes(rg *echo.Group) {
+	// Auth routes
+	auth := rg.Group("/auth")
+	auth.POST("/telegram", ctrl.authTelegram)
+	
+	// User routes
+	users := rg.Group("/users")
+	users.GET("/:id", ctrl.getByID)
+	users.PUT("/:id", ctrl.update)
+	
+	// Profile routes
+	users.GET("/me", ctrl.getProfile)
+	users.PUT("/me", ctrl.updateProfile)
+}
+
+
+func (ctrl *UserController) authTelegram(c echo.Context) error {
+	var req domain.TelegramAuthRequest
+	
+	if err := httpResponse.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	
+	user, token, err := ctrl.userService.AuthFromTelegram(req.InitData)
+	if err != nil {
+		switch err.Error() {
+		case "invalid telegram data":
+			return httpResponse.BadRequestResponse(c, "Invalid Telegram data")
+		case "database error":
+			return httpResponse.InternalServerErrorResponse(c, "Database error")
+		default:
+			return httpResponse.UnauthorizedResponse(c, "Authentication failed")
+		}
+	}
+	
+	return httpResponse.SuccessResponse(c, map[string]interface{}{
+		"user":  user,
+		"token": token,
+	}, "Authentication successful")
+}
+
+
+func (ctrl *UserController) getByID(c echo.Context) error {
+	idParam := c.Param("id")
+	if idParam == "" {
+		return httpResponse.BadRequestResponse(c, "User ID is required")
+	}
+	
+	userID, err := uuid.Parse(idParam)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID format")
+	}
+	
+	user, err := ctrl.userService.GetUser(userID)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return httpResponse.NotFoundResponse(c, "User not found")
+		}
+		return httpResponse.InternalServerErrorResponse(c, "Failed to retrieve user")
+	}
+	
+	return httpResponse.SuccessResponse(c, user)
+}
+
+
+func (ctrl *UserController) update(c echo.Context) error {
+	idParam := c.Param("id")
+	if idParam == "" {
+		return httpResponse.BadRequestResponse(c, "User ID is required")
+	}
+	
+	userID, err := uuid.Parse(idParam)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID format")
+	}
+	
+	var req domain.UpdateUserRequest
+	if err := httpResponse.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	
+	user, err := ctrl.userService.UpdateUser(userID, req)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return httpResponse.NotFoundResponse(c, "User not found")
+		}
+		if err.Error() == "no fields to update" {
+			return httpResponse.BadRequestResponse(c, "No fields to update")
+		}
+		return httpResponse.InternalServerErrorResponse(c, "Failed to update user")
+	}
+	
+	return httpResponse.SuccessResponse(c, user, "User updated successfully")
+}
+
+func (ctrl *UserController) getProfile(c echo.Context) error {
+	// TODO: Получить ID пользователя из JWT токена
+	// Пока получаем из заголовка для тестирования
+	userIDStr := c.Request().Header.Get("X-User-ID")
+	if userIDStr == "" {
+		return httpResponse.UnauthorizedResponse(c, "Authentication required")
+	}
+	
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
+	}
+	
+	user, err := ctrl.userService.GetUser(userID)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return httpResponse.NotFoundResponse(c, "User not found")
+		}
+		return httpResponse.InternalServerErrorResponse(c, "Failed to retrieve profile")
+	}
+	
+	return httpResponse.SuccessResponse(c, user, "Profile retrieved successfully")
+}
+
+
+func (ctrl *UserController) updateProfile(c echo.Context) error {
+	userIDStr := c.Request().Header.Get("X-User-ID")
+	if userIDStr == "" {
+		return httpResponse.UnauthorizedResponse(c, "Authentication required")
+	}
+	
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
+	}
+	
+	var req domain.UpdateUserRequest
+	if err := httpResponse.BindAndValidate(c, &req); err != nil {
+		return err
+	}
+	
+	user, err := ctrl.userService.UpdateUser(userID, req)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return httpResponse.NotFoundResponse(c, "User not found")
+		}
+		if err.Error() == "no fields to update" {
+			return httpResponse.BadRequestResponse(c, "No fields to update")
+		}
+		return httpResponse.InternalServerErrorResponse(c, "Failed to update profile")
+	}
+	
+	return httpResponse.SuccessResponse(c, user, "Profile updated successfully")
+}
