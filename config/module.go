@@ -6,14 +6,7 @@ import (
 )
 
 func NewViperConfig() (*viper.Viper, error) {
-	configNames := []string{"config", "app", "application"}
-	
-	for _, name := range configNames {
-		if v, err := LoadConfig(name); err == nil {
-			return v, nil
-		}
-	}
-	return LoadConfig("config")
+	return LoadConfig()
 }
 
 var Module = fx.Options(
