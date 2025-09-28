@@ -7,9 +7,13 @@ on:
     branches: [ main ]
 
 env: 
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.25.1'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-test:
@@ -22,22 +26,18 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        cache: true
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Download dependencies
-      run: go mod download
+    - name: Verify dependencies
+      run: |
+        go mod verify
+        go mod tidy
+        git diff --exit-code go.mod go.sum
 
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v4
       with:
-        version: latest
+        version: v2.5.0
         args: --timeout=5m
 
     - name: Run tests
@@ -45,11 +45,20 @@ jobs:
         go test -v -race -coverprofile=coverage.out ./...
         go tool cover -html=coverage.out -o coverage.html
 
+    - name: Check test coverage
+      run: |
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+        echo "Coverage: $COVERAGE%"
+        echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+
     - name: Upload coverage reports
-      uses: actions/upload-artifact@v4 
+      uses: actions/upload-artifact@v4
       with:
-        name: coverage-report
-        path: coverage.html
+        name: coverage-report-${{ github.sha }}
+        path: |
+          coverage.out
+          coverage.html
+        retention-days: 7
 
   build:
     needs: lint-and-test
@@ -80,7 +89,7 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=sha,prefix={{branch}}-
+          type=sha,prefix={{branch}}-,suffix=-{{date 'YYYYMMDD-HHmmss'}}
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push Docker image
@@ -93,6 +102,9 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        build-args: |
+          BUILDTIME=${{ github.event.head_commit.timestamp }}
+          VERSION=${{ github.sha }}
 
   deploy:
     needs: build
@@ -108,13 +120,16 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: ${{ secrets.PORT }}
         script: |
+          if docker ps | grep -q job-hunter-api; then
+            docker exec job-hunter-db pg_dump -U $POSTGRES_USER $POSTGRES_DBNAME > /opt/job-hunter/backup/backup_$(date +%Y%m%d_%H%M%S).sql || echo "Бэкап не удался"
+          fi
+          
           docker stop job-hunter-api || true
           docker rm job-hunter-api || true
           
           docker image prune -f
           
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-          
           docker pull ${{ needs.build.outputs.image-tag }}
           
           docker run -d \
@@ -125,7 +140,20 @@ jobs:
             --network job-hunter-network \
             ${{ needs.build.outputs.image-tag }}
           
-          sleep 10
-          docker ps | grep job-hunter-api
+          sleep 20
           
-          curl -f http://localhost:8080/api/health || exit 1
+          if docker ps | grep job-hunter-api; then
+          else
+            docker logs job-hunter-api
+            exit 1
+          fi
+          
+          for i in {1..5}; do
+            if curl -f http://localhost:8080/api/health; then
+              exit 0
+            fi
+            sleep 10
+          done
+          
+          docker logs job-hunter-api
+          exit 1
