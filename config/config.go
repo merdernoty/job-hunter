@@ -12,6 +12,16 @@ type Config struct {
 	Postgres PostgresConfig `mapstructure:"postgres"`
 	Logger   Logger         `mapstructure:"logger"`
 	Bot      BotConfig      `mapstructure:"bot"`
+	MiniO    MiniOConfig    `mapstructure:"minio"`
+}
+
+type MiniOConfig struct {
+	Endpoint        string `mapstructure:"endpoint"`
+	AccessKeyID     string `mapstructure:"accesskeyid"`
+	SecretAccessKey string `mapstructure:"secretaccesskey"`
+	BucketName      string `mapstructure:"bucketname"`
+	UseSSL          bool   `mapstructure:"usessl"`
+	Region          string `mapstructure:"region"`
 }
 
 type BotConfig struct {
@@ -96,4 +106,12 @@ func setDefaults(v *viper.Viper) {
 	// Bot defaults
 	v.SetDefault("bot.token", "")
 	v.SetDefault("bot.webappurl", "")
+
+	// MiniO defaults
+	v.SetDefault("minio.endpoint", "localhost:9000")
+	v.SetDefault("minio.accesskeyid", "minioadmin")
+	v.SetDefault("minio.secretaccesskey", "minioadmin")
+	v.SetDefault("minio.bucketname", "job-hunter-files")
+	v.SetDefault("minio.usessl", false)
+	v.SetDefault("minio.region", "us-east-1")
 }

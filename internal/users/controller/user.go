@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/merdernoty/job-hunter/internal/users/domain"
@@ -21,25 +23,26 @@ func (ctrl *UserController) RegisterRoutes(rg *echo.Group) {
 	// Auth routes
 	auth := rg.Group("/auth")
 	auth.POST("/telegram", ctrl.authTelegram)
-	
+
 	// User routes
 	users := rg.Group("/users")
 	users.GET("/:id", ctrl.getByID)
 	users.PUT("/:id", ctrl.update)
-	
+
 	// Profile routes
 	users.GET("/me", ctrl.getProfile)
 	users.PUT("/me", ctrl.updateProfile)
+	users.PUT("/me/avatar", ctrl.updateAvatar)
+	users.DELETE("/me/avatar", ctrl.deleteAvatar)
 }
-
 
 func (ctrl *UserController) authTelegram(c echo.Context) error {
 	var req domain.TelegramAuthRequest
-	
+
 	if err := httpResponse.BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	
+
 	user, token, err := ctrl.userService.AuthFromTelegram(req.InitData)
 	if err != nil {
 		switch err.Error() {
@@ -51,25 +54,24 @@ func (ctrl *UserController) authTelegram(c echo.Context) error {
 			return httpResponse.UnauthorizedResponse(c, "Authentication failed")
 		}
 	}
-	
+
 	return httpResponse.SuccessResponse(c, map[string]interface{}{
 		"user":  user,
 		"token": token,
 	}, "Authentication successful")
 }
 
-
 func (ctrl *UserController) getByID(c echo.Context) error {
 	idParam := c.Param("id")
 	if idParam == "" {
 		return httpResponse.BadRequestResponse(c, "User ID is required")
 	}
-	
+
 	userID, err := uuid.Parse(idParam)
 	if err != nil {
 		return httpResponse.BadRequestResponse(c, "Invalid user ID format")
 	}
-	
+
 	user, err := ctrl.userService.GetUser(userID)
 	if err != nil {
 		if err.Error() == "user not found" {
@@ -77,27 +79,26 @@ func (ctrl *UserController) getByID(c echo.Context) error {
 		}
 		return httpResponse.InternalServerErrorResponse(c, "Failed to retrieve user")
 	}
-	
+
 	return httpResponse.SuccessResponse(c, user)
 }
-
 
 func (ctrl *UserController) update(c echo.Context) error {
 	idParam := c.Param("id")
 	if idParam == "" {
 		return httpResponse.BadRequestResponse(c, "User ID is required")
 	}
-	
+
 	userID, err := uuid.Parse(idParam)
 	if err != nil {
 		return httpResponse.BadRequestResponse(c, "Invalid user ID format")
 	}
-	
+
 	var req domain.UpdateUserRequest
 	if err := httpResponse.BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	
+
 	user, err := ctrl.userService.UpdateUser(userID, req)
 	if err != nil {
 		if err.Error() == "user not found" {
@@ -108,7 +109,7 @@ func (ctrl *UserController) update(c echo.Context) error {
 		}
 		return httpResponse.InternalServerErrorResponse(c, "Failed to update user")
 	}
-	
+
 	return httpResponse.SuccessResponse(c, user, "User updated successfully")
 }
 
@@ -119,12 +120,12 @@ func (ctrl *UserController) getProfile(c echo.Context) error {
 	if userIDStr == "" {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
 	}
-	
+
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
 	}
-	
+
 	user, err := ctrl.userService.GetUser(userID)
 	if err != nil {
 		if err.Error() == "user not found" {
@@ -132,27 +133,26 @@ func (ctrl *UserController) getProfile(c echo.Context) error {
 		}
 		return httpResponse.InternalServerErrorResponse(c, "Failed to retrieve profile")
 	}
-	
+
 	return httpResponse.SuccessResponse(c, user, "Profile retrieved successfully")
 }
-
 
 func (ctrl *UserController) updateProfile(c echo.Context) error {
 	userIDStr := c.Request().Header.Get("X-User-ID")
 	if userIDStr == "" {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
 	}
-	
+
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
 	}
-	
+
 	var req domain.UpdateUserRequest
 	if err := httpResponse.BindAndValidate(c, &req); err != nil {
 		return err
 	}
-	
+
 	user, err := ctrl.userService.UpdateUser(userID, req)
 	if err != nil {
 		if err.Error() == "user not found" {
@@ -163,6 +163,78 @@ func (ctrl *UserController) updateProfile(c echo.Context) error {
 		}
 		return httpResponse.InternalServerErrorResponse(c, "Failed to update profile")
 	}
-	
+
 	return httpResponse.SuccessResponse(c, user, "Profile updated successfully")
+}
+func (ctrl *UserController) updateAvatar(c echo.Context) error {
+	userIDStr := c.Request().Header.Get("X-User-ID")
+	if userIDStr == "" {
+		return httpResponse.UnauthorizedResponse(c, "Authentication required")
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
+	}
+
+	file, header, err := c.Request().FormFile("avatar")
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "No avatar file provided")
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		if strings.HasSuffix(strings.ToLower(header.Filename), ".png") {
+			contentType = "image/png"
+		} else if strings.HasSuffix(strings.ToLower(header.Filename), ".gif") {
+			contentType = "image/gif"
+		} else {
+			contentType = "image/jpeg"
+		}
+	}
+
+	avatarURL, err := ctrl.userService.UpdateUserAvatar(userID, file, header.Filename, header.Size, contentType)
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "user not found"):
+			return httpResponse.NotFoundResponse(c, "User not found")
+		case strings.Contains(err.Error(), "invalid file type"):
+			return httpResponse.BadRequestResponse(c, "Invalid file type: only images are allowed")
+		case strings.Contains(err.Error(), "file too large"):
+			return httpResponse.BadRequestResponse(c, "Avatar file too large: maximum size is 2MB")
+		default:
+			return httpResponse.InternalServerErrorResponse(c, "Failed to update avatar")
+		}
+	}
+
+	return httpResponse.SuccessResponse(c, map[string]interface{}{
+		"avatar_url": avatarURL,
+	}, "Avatar updated successfully")
+}
+
+func (ctrl *UserController) deleteAvatar(c echo.Context) error {
+	userIDStr := c.Request().Header.Get("X-User-ID")
+	if userIDStr == "" {
+		return httpResponse.UnauthorizedResponse(c, "Authentication required")
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
+	}
+
+	err = ctrl.userService.DeleteUserAvatar(userID)
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "user not found"):
+			return httpResponse.NotFoundResponse(c, "User not found")
+		case strings.Contains(err.Error(), "has no avatar"):
+			return httpResponse.BadRequestResponse(c, "User has no avatar to delete")
+		default:
+			return httpResponse.InternalServerErrorResponse(c, "Failed to delete avatar")
+		}
+	}
+
+	return httpResponse.SuccessResponse(c, nil, "Avatar deleted successfully")
 }

@@ -1,10 +1,10 @@
 package user
 
 import (
-	"go.uber.org/fx"
 	"github.com/merdernoty/job-hunter/internal/users/domain"
 	"github.com/merdernoty/job-hunter/internal/users/repository"
 	"github.com/merdernoty/job-hunter/internal/users/service"
+	"go.uber.org/fx"
 )
 
 var Module = fx.Module("user",
@@ -20,5 +20,6 @@ var Module = fx.Module("user",
 			service.NewUserService,
 			fx.As(new(domain.UserService)),
 		),
+		service.NewAvatarService,
 	),
 )

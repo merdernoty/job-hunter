@@ -58,7 +58,7 @@ func NewMigrator(db *sqlx.DB, cfg *config.Config, logger logger.Logger) (Migrato
 
 func (m *migrator) Up() error {
 	m.logger.Info("Starting database migrations...")
-	
+
 	if err := m.migrate.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			m.logger.Info("No new migrations to apply")
@@ -66,14 +66,14 @@ func (m *migrator) Up() error {
 		}
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
-	
+
 	m.logger.Info("Database migrations completed successfully")
 	return nil
 }
 
 func (m *migrator) Down() error {
 	m.logger.Info("Rolling back all migrations...")
-	
+
 	if err := m.migrate.Down(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			m.logger.Info("No migrations to rollback")
@@ -81,7 +81,7 @@ func (m *migrator) Down() error {
 		}
 		return fmt.Errorf("failed to rollback migrations: %w", err)
 	}
-	
+
 	m.logger.Info("All migrations rolled back successfully")
 	return nil
 }
@@ -91,9 +91,9 @@ func (m *migrator) Steps(n int) error {
 	if n < 0 {
 		direction = "backward"
 	}
-	
+
 	m.logger.Infof("Running %d migration steps %s...", abs(n), direction)
-	
+
 	if err := m.migrate.Steps(n); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			m.logger.Info("No migration steps to apply")
@@ -101,29 +101,29 @@ func (m *migrator) Steps(n int) error {
 		}
 		return fmt.Errorf("failed to run migration steps: %w", err)
 	}
-	
+
 	m.logger.Infof("Successfully completed %d migration steps %s", abs(n), direction)
 	return nil
 }
 
 func (m *migrator) Force(version int) error {
 	m.logger.Infof("Forcing migration version to %d...", version)
-	
+
 	if err := m.migrate.Force(version); err != nil {
 		return fmt.Errorf("failed to force migration version: %w", err)
 	}
-	
+
 	m.logger.Infof("Successfully forced migration version to %d", version)
 	return nil
 }
 
 func (m *migrator) Drop() error {
 	m.logger.Warn("Dropping all database objects...")
-	
+
 	if err := m.migrate.Drop(); err != nil {
 		return fmt.Errorf("failed to drop database: %w", err)
 	}
-	
+
 	m.logger.Info("All database objects dropped successfully")
 	return nil
 }
@@ -137,12 +137,12 @@ func (m *migrator) Version() (version uint, dirty bool, err error) {
 		}
 		return 0, false, fmt.Errorf("failed to get migration version: %w", err)
 	}
-	
+
 	status := "clean"
 	if dirty {
 		status = "dirty"
 	}
-	
+
 	m.logger.Infof("Current migration version: %d (%s)", version, status)
 	return version, dirty, nil
 }
@@ -155,7 +155,12 @@ func (m *migrator) Close() error {
 }
 
 func AutoMigrate(db *sqlx.DB, cfg *config.Config, logger logger.Logger) error {
-	migrator, err := NewMigrator(db, cfg, logger)
+	migrationDB, err := NewPsqlDB(cfg, logger)
+	if err != nil {
+		return err
+	}
+
+	migrator, err := NewMigrator(migrationDB, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create migrator: %w", err)
 	}

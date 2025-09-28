@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"io"
 	"time"
+
 	"github.com/google/uuid"
 )
 
@@ -25,7 +27,6 @@ type UpdateUserRequest struct {
 	Bio       *string `json:"bio,omitempty" validate:"omitempty,max=500"`
 }
 
-
 type UserRepository interface {
 	GetByID(id uuid.UUID) (*User, error)
 	GetByTelegramID(telegramID int64) (*User, error)
@@ -37,4 +38,6 @@ type UserService interface {
 	AuthFromTelegram(initData string) (*User, string, error) // user, token, error
 	GetUser(id uuid.UUID) (*User, error)
 	UpdateUser(id uuid.UUID, req UpdateUserRequest) (*User, error)
+	UpdateUserAvatar(userID uuid.UUID, file io.Reader, fileName string, fileSize int64, contentType string) (string, error)
+	DeleteUserAvatar(userID uuid.UUID) error
 }
