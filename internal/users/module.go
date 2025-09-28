@@ -13,8 +13,11 @@ var Module = fx.Module("user",
 			repository.NewUserRepository,
 			fx.As(new(domain.UserRepository)),
 		),
+		fx.Annotate(
+			repository.NewUserDailyViewRepository,
+			fx.As(new(domain.UserDailyViewRepository)),
+		),
 	),
-
 	fx.Provide(
 		fx.Annotate(
 			service.NewUserService,

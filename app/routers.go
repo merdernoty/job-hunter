@@ -11,7 +11,7 @@ func RegisterRoutes(
 	userCtrl *controller.UserController,
 ) {
 	s.Echo().GET("/api/health", healthCheck(s))
-	// API v1 группа
+	// API v1
 	api := s.Echo().Group("/api/v1")
 	userCtrl.RegisterRoutes(api)
 }

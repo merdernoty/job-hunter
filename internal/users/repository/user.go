@@ -23,7 +23,7 @@ func NewUserRepository(db *sqlx.DB, logger logger.Logger) domain.UserRepository 
 func (r *userRepository) GetByID(id uuid.UUID) (*domain.User, error) {
 	var user domain.User
 	query := `
-		SELECT id, telegram_id, avatar_url, username, bio, created_at, updated_at
+		SELECT id, telegram_id, avatar_url, telegram_handle, username, bio, created_at, updated_at
 		FROM users 
 		WHERE id = $1`
 	err := r.db.Get(&user, query, id)
@@ -41,7 +41,7 @@ func (r *userRepository) GetByTelegramID(telegramID int64) (*domain.User, error)
 	var user domain.User
 
 	query := `
-		SELECT id, telegram_id, avatar_url, username, bio, created_at, updated_at
+		SELECT id, telegram_id, avatar_url, telegram_handle, username, bio, created_at, updated_at
 		FROM users 
 		WHERE telegram_id = $1`
 
@@ -63,13 +63,13 @@ func (r *userRepository) Create(user *domain.User) error {
 	}
 
 	query := `
-		INSERT INTO users (id, telegram_id, username, avatar_url, bio)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (id, telegram_id, username, telegram_handle, avatar_url, bio)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at, updated_at`
 
 	err := r.db.QueryRow(
 		query,
-		user.ID, user.TelegramID, user.Username, user.AvatarURL, user.Bio,
+		user.ID, user.TelegramID, user.Username, user.TelegramHandle, user.AvatarURL, user.Bio,
 	).Scan(&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -80,6 +80,7 @@ func (r *userRepository) Create(user *domain.User) error {
 	r.logger.Infof("Created user: %s (telegram_id: %d)", user.Username, user.TelegramID)
 	return nil
 }
+
 func (r *userRepository) Update(id uuid.UUID, updates domain.UpdateUserRequest) error {
 	setParts := []string{}
 	args := []interface{}{}
@@ -130,5 +131,114 @@ func (r *userRepository) Update(id uuid.UUID, updates domain.UpdateUserRequest) 
 	}
 
 	r.logger.Infof("Updated user: %s", id)
+	return nil
+}
+
+func (r *userRepository) GetRandomUser(excludeUserIDs []uuid.UUID) (*domain.User, error) {
+	var user domain.User
+	var query string
+	var args []interface{}
+
+	r.logger.Infof("GetRandomUser called with %d exclusions: %v", len(excludeUserIDs), excludeUserIDs)
+
+	if len(excludeUserIDs) == 0 {
+		query = `
+			SELECT id, telegram_id, username, telegram_handle, avatar_url, bio, created_at, updated_at
+			FROM users
+			ORDER BY RANDOM()
+			LIMIT 1`
+		r.logger.Info("Using query without exclusions")
+	} else {
+		placeholders := ""
+		for i := range excludeUserIDs {
+			if i > 0 {
+				placeholders += ","
+			}
+			placeholders += fmt.Sprintf("$%d", i+1)
+			args = append(args, excludeUserIDs[i])
+		}
+
+		query = fmt.Sprintf(`
+			SELECT id, telegram_id, username, telegram_handle, avatar_url, bio, created_at, updated_at
+			FROM users
+			WHERE id NOT IN (%s)
+			ORDER BY RANDOM()
+			LIMIT 1`, placeholders)
+
+		r.logger.Infof("Using query with exclusions: %s", query)
+		r.logger.Infof("Query args: %v", args)
+	}
+
+	err := r.db.Get(&user, query, args...)
+	if err == sql.ErrNoRows {
+		r.logger.Warn("No available users found after exclusions")
+		return nil, fmt.Errorf("no available users found")
+	}
+	if err != nil {
+		r.logger.Errorf("Failed to get random user: %v", err)
+		return nil, fmt.Errorf("database error")
+	}
+
+	r.logger.Infof("Retrieved random user: %s (ID: %s)", user.Username, user.ID)
+	for _, excludeID := range excludeUserIDs {
+		if user.ID == excludeID {
+			r.logger.Errorf("CRITICAL: Selected user %s is in exclusion list! This should not happen!", user.ID)
+			return nil, fmt.Errorf("no available users found")
+		}
+	}
+
+	return &user, nil
+}
+func (r *userRepository) GetTodaysDailyUser(viewerID uuid.UUID) (*domain.User, error) {
+	var user domain.User
+	query := `
+		SELECT u.id, u.telegram_id, u.username, u.telegram_handle, u.avatar_url, u.bio, u.created_at, u.updated_at
+		FROM users u
+		JOIN user_daily_views udv ON u.id = udv.shown_user_id
+		WHERE udv.viewer_id = $1 AND udv.view_date = CURRENT_DATE
+		ORDER BY udv.created_at ASC
+		LIMIT 1`
+
+	err := r.db.Get(&user, query, viewerID)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("no daily user found for today")
+	}
+	if err != nil {
+		r.logger.Errorf("Failed to get today's daily user for viewer %s: %v", viewerID, err)
+		return nil, fmt.Errorf("database error")
+	}
+
+	return &user, nil
+}
+
+func (r *userRepository) GetTodaysShownUsers(viewerID uuid.UUID) ([]uuid.UUID, error) {
+	var userIDs []uuid.UUID
+	query := `
+		SELECT shown_user_id 
+		FROM user_daily_views 
+		WHERE viewer_id = $1 AND view_date = CURRENT_DATE`
+
+	err := r.db.Select(&userIDs, query, viewerID)
+	if err != nil {
+		r.logger.Errorf("Failed to get today's shown users for viewer %s: %v", viewerID, err)
+		return nil, fmt.Errorf("database error")
+	}
+
+	return userIDs, nil
+}
+
+func (r *userRepository) MarkUserAsShownToday(viewerID, shownUserID uuid.UUID) error {
+	query := `
+		INSERT INTO user_daily_views (viewer_id, shown_user_id, view_date)
+		VALUES ($1, $2, CURRENT_DATE)
+		ON CONFLICT (viewer_id, shown_user_id, view_date) DO NOTHING`
+
+	_, err := r.db.Exec(query, viewerID, shownUserID)
+	if err != nil {
+		r.logger.Errorf("Failed to mark user %s as shown to viewer %s: %v", shownUserID, viewerID, err)
+		return fmt.Errorf("failed to mark user as shown")
+	}
+
+	r.logger.Infof("Marked user %s as shown to viewer %s for today", shownUserID, viewerID)
 	return nil
 }

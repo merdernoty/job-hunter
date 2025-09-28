@@ -34,6 +34,9 @@ func (ctrl *UserController) RegisterRoutes(rg *echo.Group) {
 	users.PUT("/me", ctrl.updateProfile)
 	users.PUT("/me/avatar", ctrl.updateAvatar)
 	users.DELETE("/me/avatar", ctrl.deleteAvatar)
+
+	// Match routes
+	users.GET("/:viewerID/random", ctrl.getRandomUser)
 }
 
 func (ctrl *UserController) authTelegram(c echo.Context) error {
@@ -58,7 +61,7 @@ func (ctrl *UserController) authTelegram(c echo.Context) error {
 	return httpResponse.SuccessResponse(c, map[string]interface{}{
 		"user":  user,
 		"token": token,
-	}, "Authentication successful")
+	})
 }
 
 func (ctrl *UserController) getByID(c echo.Context) error {
@@ -110,7 +113,7 @@ func (ctrl *UserController) update(c echo.Context) error {
 		return httpResponse.InternalServerErrorResponse(c, "Failed to update user")
 	}
 
-	return httpResponse.SuccessResponse(c, user, "User updated successfully")
+	return httpResponse.SuccessResponse(c, user)
 }
 
 func (ctrl *UserController) getProfile(c echo.Context) error {
@@ -134,7 +137,7 @@ func (ctrl *UserController) getProfile(c echo.Context) error {
 		return httpResponse.InternalServerErrorResponse(c, "Failed to retrieve profile")
 	}
 
-	return httpResponse.SuccessResponse(c, user, "Profile retrieved successfully")
+	return httpResponse.SuccessResponse(c, user)
 }
 
 func (ctrl *UserController) updateProfile(c echo.Context) error {
@@ -164,7 +167,7 @@ func (ctrl *UserController) updateProfile(c echo.Context) error {
 		return httpResponse.InternalServerErrorResponse(c, "Failed to update profile")
 	}
 
-	return httpResponse.SuccessResponse(c, user, "Profile updated successfully")
+	return httpResponse.SuccessResponse(c, user)
 }
 func (ctrl *UserController) updateAvatar(c echo.Context) error {
 	userIDStr := c.Request().Header.Get("X-User-ID")
@@ -236,5 +239,27 @@ func (ctrl *UserController) deleteAvatar(c echo.Context) error {
 		}
 	}
 
-	return httpResponse.SuccessResponse(c, nil, "Avatar deleted successfully")
+	return httpResponse.SuccessResponse(c, nil)
+}
+
+func (ctrl *UserController) getRandomUser(c echo.Context) error {
+	viewerIDStr := c.Param("viewerID")
+	if viewerIDStr == "" {
+		return httpResponse.BadRequestResponse(c, "Viewer ID is required")
+	}
+
+	viewerID, err := uuid.Parse(viewerIDStr)
+	if err != nil {
+		return httpResponse.BadRequestResponse(c, "Invalid viewer ID format")
+	}
+
+	randomUser, err := ctrl.userService.GetRandomUser(viewerID)
+	if err != nil {
+		if err.Error() == "no more users available today" {
+			return httpResponse.SuccessResponse(c, nil, "На сегодня все пользователи просмотрены")
+		}
+		return httpResponse.InternalServerErrorResponse(c, "Failed to get random user")
+	}
+
+	return httpResponse.SuccessResponse(c, randomUser)
 }

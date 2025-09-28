@@ -13,6 +13,7 @@ import (
 
 type userService struct {
 	userRepo      domain.UserRepository
+	dailyViewRepo domain.UserDailyViewRepository
 	telegramAuth  *telegram.TelegramAuth
 	avatarService *AvatarService
 	logger        logger.Logger
@@ -21,6 +22,7 @@ type userService struct {
 func NewUserService(
 	userRepo domain.UserRepository,
 	telegramAuth *telegram.TelegramAuth,
+	dailyViewRepo domain.UserDailyViewRepository,
 	avatarService *AvatarService,
 	logger logger.Logger,
 ) domain.UserService {
@@ -28,6 +30,7 @@ func NewUserService(
 		userRepo:      userRepo,
 		telegramAuth:  telegramAuth,
 		avatarService: avatarService,
+		dailyViewRepo: dailyViewRepo,
 		logger:        logger,
 	}
 }
@@ -41,12 +44,21 @@ func (s *userService) AuthFromTelegram(initData string) (*domain.User, string, e
 
 	user, err := s.userRepo.GetByTelegramID(webAppData.User.ID)
 	if err != nil && err.Error() == "user not found" {
+		username := webAppData.User.Username
+		handle := ""
+		if username != "" {
+			handle = "@" + username
+		} else {
+			handle = fmt.Sprintf("id%d", webAppData.User.ID)
+		}
+
 		user = &domain.User{
-			ID:         uuid.New(),
-			TelegramID: webAppData.User.ID,
-			Username:   webAppData.User.Username,
-			CreatedAt:  time.Now(),
-			UpdatedAt:  time.Now(),
+			ID:             uuid.New(),
+			TelegramID:     webAppData.User.ID,
+			Username:       webAppData.User.Username,
+			TelegramHandle: handle,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
 		}
 
 		if err := s.userRepo.Create(user); err != nil {
@@ -103,8 +115,8 @@ func (s *userService) UpdateUserAvatar(userID uuid.UUID, file io.Reader, fileNam
 		return "", err
 	}
 
-	if existingUser.AvatarURL != "" {
-		if err := s.avatarService.DeleteAvatar(existingUser.AvatarURL); err != nil {
+	if existingUser.AvatarURL != nil && *existingUser.AvatarURL != "" {
+		if err := s.avatarService.DeleteAvatar(*existingUser.AvatarURL); err != nil {
 			s.logger.Warnf("Failed to delete old avatar for user %s: %v", userID, err)
 		}
 	}
@@ -136,7 +148,7 @@ func (s *userService) UpdateUserAvatar(userID uuid.UUID, file io.Reader, fileNam
 	}
 
 	s.logger.Infof("Successfully updated avatar for user %s: %s", userID, avatarURL)
-	return updatedUser.AvatarURL, nil
+	return *updatedUser.AvatarURL, nil
 }
 
 func (s *userService) DeleteUserAvatar(userID uuid.UUID) error {
@@ -145,11 +157,11 @@ func (s *userService) DeleteUserAvatar(userID uuid.UUID) error {
 		return err
 	}
 
-	if user.AvatarURL == "" {
+	if user.AvatarURL == nil || *user.AvatarURL == "" {
 		return fmt.Errorf("user has no avatar")
 	}
 
-	if err := s.avatarService.DeleteAvatar(user.AvatarURL); err != nil {
+	if err := s.avatarService.DeleteAvatar(*user.AvatarURL); err != nil {
 		s.logger.Errorf("Failed to delete avatar file: %v", err)
 	}
 
@@ -164,4 +176,50 @@ func (s *userService) DeleteUserAvatar(userID uuid.UUID) error {
 
 	s.logger.Infof("Successfully deleted avatar for user %s", userID)
 	return nil
+}
+func (s *userService) GetRandomUser(viewerID uuid.UUID) (*domain.User, error) {
+	shownToday, err := s.dailyViewRepo.GetTodaysShownUsers(viewerID)
+	if err != nil {
+		s.logger.Warnf("Failed to get today's shown users: %v", err)
+		shownToday = []uuid.UUID{}
+	}
+
+	excludeMap := make(map[uuid.UUID]bool)
+	excludeMap[viewerID] = true
+
+	for _, userID := range shownToday {
+		excludeMap[userID] = true
+	}
+
+	excludeUserIDs := make([]uuid.UUID, 0, len(excludeMap))
+	for userID := range excludeMap {
+		excludeUserIDs = append(excludeUserIDs, userID)
+	}
+
+	s.logger.Infof("Excluding %d unique users for viewer %s", len(excludeUserIDs)-1, viewerID)
+
+	user, err := s.userRepo.GetRandomUser(excludeUserIDs)
+	if err != nil {
+		if err.Error() == "no available users found" {
+			s.logger.Infof("All users shown to viewer %s today - no more users available", viewerID)
+			return nil, fmt.Errorf("no more users available today")
+		} else {
+			s.logger.Errorf("Database error getting random user: %v", err)
+			return nil, fmt.Errorf("database error")
+		}
+	}
+
+	dailyView := &domain.UserDailyView{
+		ViewerID:    viewerID,
+		ShownUserID: user.ID,
+		ViewDate:    time.Now().UTC().Truncate(24 * time.Hour),
+		CreatedAt:   time.Now(),
+	}
+
+	if err := s.dailyViewRepo.Create(dailyView); err != nil {
+		s.logger.Warnf("Failed to create daily view record: %v", err)
+	}
+
+	s.logger.Infof("Selected user %s (%s) for viewer %s", user.Username, user.ID, viewerID)
+	return user, nil
 }
