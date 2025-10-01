@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -132,11 +133,11 @@ func (s *AvatarService) uploadToMinio(objectName string, file io.Reader, fileSiz
 }
 
 func (s *AvatarService) generatePublicURL(objectName string) string {
-	endpoint := s.minioClient.GetEndpoint()
+	endpoint := os.Getenv("MINIO_HOST")
 	bucketName := s.minioClient.GetBucketName()
 
-	if strings.HasPrefix(endpoint, "http://") {
-		endpoint = strings.TrimPrefix(endpoint, "http://")
+	if endpoint == "" {
+		endpoint = strings.TrimPrefix(s.minioClient.GetEndpoint(), "http://")
 	}
 
 	return fmt.Sprintf("http://%s/%s/%s", endpoint, bucketName, objectName)

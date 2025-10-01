@@ -34,6 +34,7 @@ type UserRepository interface {
 	GetRandomUser(excludeUserIDs []uuid.UUID) (*User, error)
 	Create(user *User) error
 	Update(id uuid.UUID, updates UpdateUserRequest) error
+	GetAllUsers() ([]User, error)
 }
 
 type UserService interface {
@@ -41,6 +42,7 @@ type UserService interface {
 	GetUser(id uuid.UUID) (*User, error)
 	UpdateUser(id uuid.UUID, req UpdateUserRequest) (*User, error)
 	GetRandomUser(viewerID uuid.UUID) (*User, error)
+	GetAllUsers() ([]User, error)
 	UpdateUserAvatar(userID uuid.UUID, file io.Reader, fileName string, fileSize int64, contentType string) (string, error)
 	DeleteUserAvatar(userID uuid.UUID) error
 }

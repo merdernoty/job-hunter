@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -13,6 +14,12 @@ type Config struct {
 	Logger   Logger         `mapstructure:"logger"`
 	Bot      BotConfig      `mapstructure:"bot"`
 	MiniO    MiniOConfig    `mapstructure:"minio"`
+	Jwt      JWTConfig      `mapstructure:"jwt"`
+}
+
+type JWTConfig struct {
+	Secret string        `mapstructure:"jwt_secret"`
+	TTL    time.Duration `mapstructure:"jwt_ttl"`
 }
 
 type MiniOConfig struct {
@@ -114,4 +121,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("minio.bucketname", "job-hunter-files")
 	v.SetDefault("minio.usessl", false)
 	v.SetDefault("minio.region", "us-east-1")
+
+	// JWT defaults
+	v.SetDefault("jwt.jwt_secret", "sadasdasd123sd")
+	v.SetDefault("jwt.jwt_ttl", 24*time.Hour)
 }

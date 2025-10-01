@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/merdernoty/job-hunter/internal/users/domain"
+	"github.com/merdernoty/job-hunter/internal/users/middleware"
 	httpResponse "github.com/merdernoty/job-hunter/pkg/http"
 )
 
@@ -19,13 +20,14 @@ func NewUserController(userService domain.UserService) *UserController {
 	}
 }
 
-func (ctrl *UserController) RegisterRoutes(rg *echo.Group) {
+func (ctrl *UserController) RegisterRoutes(rg *echo.Group, jwtMiddleware echo.MiddlewareFunc) {
 	// Auth routes
 	auth := rg.Group("/auth")
 	auth.POST("/telegram", ctrl.authTelegram)
 
 	// User routes
-	users := rg.Group("/users")
+	users := rg.Group("/users", jwtMiddleware)
+	users.GET("", ctrl.getUsers)
 	users.GET("/:id", ctrl.getByID)
 	users.PUT("/:id", ctrl.update)
 
@@ -36,7 +38,7 @@ func (ctrl *UserController) RegisterRoutes(rg *echo.Group) {
 	users.DELETE("/me/avatar", ctrl.deleteAvatar)
 
 	// Match routes
-	users.GET("/:viewerID/random", ctrl.getRandomUser)
+	users.GET("/random", ctrl.getRandomUser)
 }
 
 func (ctrl *UserController) authTelegram(c echo.Context) error {
@@ -117,16 +119,9 @@ func (ctrl *UserController) update(c echo.Context) error {
 }
 
 func (ctrl *UserController) getProfile(c echo.Context) error {
-	// TODO: Получить ID пользователя из JWT токена
-	// Пока получаем из заголовка для тестирования
-	userIDStr := c.Request().Header.Get("X-User-ID")
-	if userIDStr == "" {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
-	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
 	}
 
 	user, err := ctrl.userService.GetUser(userID)
@@ -141,14 +136,9 @@ func (ctrl *UserController) getProfile(c echo.Context) error {
 }
 
 func (ctrl *UserController) updateProfile(c echo.Context) error {
-	userIDStr := c.Request().Header.Get("X-User-ID")
-	if userIDStr == "" {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
-	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
 	}
 
 	var req domain.UpdateUserRequest
@@ -170,14 +160,9 @@ func (ctrl *UserController) updateProfile(c echo.Context) error {
 	return httpResponse.SuccessResponse(c, user)
 }
 func (ctrl *UserController) updateAvatar(c echo.Context) error {
-	userIDStr := c.Request().Header.Get("X-User-ID")
-	if userIDStr == "" {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
-	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
 	}
 
 	file, header, err := c.Request().FormFile("avatar")
@@ -217,17 +202,12 @@ func (ctrl *UserController) updateAvatar(c echo.Context) error {
 }
 
 func (ctrl *UserController) deleteAvatar(c echo.Context) error {
-	userIDStr := c.Request().Header.Get("X-User-ID")
-	if userIDStr == "" {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
 		return httpResponse.UnauthorizedResponse(c, "Authentication required")
 	}
 
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return httpResponse.BadRequestResponse(c, "Invalid user ID in header")
-	}
-
-	err = ctrl.userService.DeleteUserAvatar(userID)
+	err := ctrl.userService.DeleteUserAvatar(userID)
 	if err != nil {
 		switch {
 		case strings.Contains(err.Error(), "user not found"):
@@ -243,17 +223,12 @@ func (ctrl *UserController) deleteAvatar(c echo.Context) error {
 }
 
 func (ctrl *UserController) getRandomUser(c echo.Context) error {
-	viewerIDStr := c.Param("viewerID")
-	if viewerIDStr == "" {
-		return httpResponse.BadRequestResponse(c, "Viewer ID is required")
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		return httpResponse.UnauthorizedResponse(c, "Authentication required")
 	}
 
-	viewerID, err := uuid.Parse(viewerIDStr)
-	if err != nil {
-		return httpResponse.BadRequestResponse(c, "Invalid viewer ID format")
-	}
-
-	randomUser, err := ctrl.userService.GetRandomUser(viewerID)
+	randomUser, err := ctrl.userService.GetRandomUser(userID)
 	if err != nil {
 		if err.Error() == "no more users available today" {
 			return httpResponse.SuccessResponse(c, nil, "На сегодня все пользователи просмотрены")
@@ -262,4 +237,12 @@ func (ctrl *UserController) getRandomUser(c echo.Context) error {
 	}
 
 	return httpResponse.SuccessResponse(c, randomUser)
+}
+
+func (ctrl *UserController) getUsers(c echo.Context) error {
+	users, err := ctrl.userService.GetAllUsers()
+	if err != nil {
+		return httpResponse.InternalServerErrorResponse(c, "Failed to get users")
+	}
+	return httpResponse.SuccessResponse(c, users)
 }

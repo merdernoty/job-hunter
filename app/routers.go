@@ -3,17 +3,21 @@ package app
 import (
 	"github.com/labstack/echo/v4"
 	"github.com/merdernoty/job-hunter/internal/users/controller"
+	"github.com/merdernoty/job-hunter/internal/users/middleware"
 	httpResponse "github.com/merdernoty/job-hunter/pkg/http"
+	"github.com/merdernoty/job-hunter/pkg/jwt"
 )
 
 func RegisterRoutes(
 	s *Server,
 	userCtrl *controller.UserController,
+	jwtService *jwt.JWTService,
 ) {
 	s.Echo().GET("/api/health", healthCheck(s))
 	// API v1
 	api := s.Echo().Group("/api/v1")
-	userCtrl.RegisterRoutes(api)
+	jwtMiddleware := middleware.JWTAuth(jwtService)
+	userCtrl.RegisterRoutes(api, jwtMiddleware)
 }
 
 func healthCheck(s *Server) echo.HandlerFunc {

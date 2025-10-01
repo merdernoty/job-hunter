@@ -8,6 +8,7 @@ import (
 	"github.com/merdernoty/job-hunter/pkg/db/postgres"
 	"github.com/merdernoty/job-hunter/pkg/env"
 	httpPkg "github.com/merdernoty/job-hunter/pkg/http"
+	"github.com/merdernoty/job-hunter/pkg/jwt"
 	"github.com/merdernoty/job-hunter/pkg/logger"
 	"github.com/merdernoty/job-hunter/pkg/storage"
 	"github.com/merdernoty/job-hunter/pkg/telegram"
@@ -24,6 +25,7 @@ func main() {
 		postgres.Module,
 		app.Module,
 		httpPkg.Module,
+		jwt.Module,
 		logger.Module,
 		bot.Module,
 		storage.Module,

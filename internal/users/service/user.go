@@ -7,12 +7,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/merdernoty/job-hunter/internal/users/domain"
+	"github.com/merdernoty/job-hunter/pkg/jwt"
 	"github.com/merdernoty/job-hunter/pkg/logger"
 	"github.com/merdernoty/job-hunter/pkg/telegram"
 )
 
 type userService struct {
 	userRepo      domain.UserRepository
+	jwtService    *jwt.JWTService
 	dailyViewRepo domain.UserDailyViewRepository
 	telegramAuth  *telegram.TelegramAuth
 	avatarService *AvatarService
@@ -22,12 +24,14 @@ type userService struct {
 func NewUserService(
 	userRepo domain.UserRepository,
 	telegramAuth *telegram.TelegramAuth,
+	jwtService *jwt.JWTService,
 	dailyViewRepo domain.UserDailyViewRepository,
 	avatarService *AvatarService,
 	logger logger.Logger,
 ) domain.UserService {
 	return &userService{
 		userRepo:      userRepo,
+		jwtService:    jwtService,
 		telegramAuth:  telegramAuth,
 		avatarService: avatarService,
 		dailyViewRepo: dailyViewRepo,
@@ -72,7 +76,10 @@ func (s *userService) AuthFromTelegram(initData string) (*domain.User, string, e
 		return nil, "", fmt.Errorf("database error")
 	}
 
-	token := fmt.Sprintf("user_%s_%d", user.ID.String(), time.Now().Unix())
+	token, err := s.jwtService.GenerateToken(user.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed generate jwt token: %w", err)
+	}
 
 	s.logger.Infof("User authenticated: %s (%d)", user.Username, user.TelegramID)
 	return user, token, nil
@@ -222,4 +229,14 @@ func (s *userService) GetRandomUser(viewerID uuid.UUID) (*domain.User, error) {
 
 	s.logger.Infof("Selected user %s (%s) for viewer %s", user.Username, user.ID, viewerID)
 	return user, nil
+}
+
+func (s *userService) GetAllUsers() ([]domain.User, error) {
+	users, err := s.userRepo.GetAllUsers()
+	if err != nil {
+		s.logger.Warnf("Failed to get users %v", err)
+		return nil, fmt.Errorf("database error %w", err)
+	}
+
+	return users, nil
 }

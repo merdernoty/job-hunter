@@ -242,3 +242,20 @@ func (r *userRepository) MarkUserAsShownToday(viewerID, shownUserID uuid.UUID) e
 	r.logger.Infof("Marked user %s as shown to viewer %s for today", shownUserID, viewerID)
 	return nil
 }
+
+func (r *userRepository) GetAllUsers() ([]domain.User, error) {
+	var users []domain.User
+	query := `
+		SELECT id, telegram_id, username, telegram_handle, avatar_url, bio, created_at, updated_at
+		FROM users
+	`
+
+	err := r.db.Select(&users, query)
+	if err != nil {
+		r.logger.Errorf("Failed to get all users: %v", err)
+		return nil, fmt.Errorf("database error")
+	}
+
+	r.logger.Info("Retrieved all users")
+	return users, nil
+}
